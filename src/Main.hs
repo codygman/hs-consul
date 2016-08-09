@@ -10,12 +10,13 @@ import Control.Exception
 import Control.Monad.Except
 import Control.Monad.Reader
 import Data.Monoid((<>))
+import qualified Data.ByteString.Lazy as LBS
 
 data ConsulInfo = ConsulInfo { consulHost :: String
                              , consulPort :: Int
                              } deriving Show
 
-data AppError = ServerDown | KeyParseError String | UnknownError
+data AppError = ServerDown | Http404 | Http500 | KeyParseError String | UnknownError deriving Show
 
 data AppEnv = AppEnv { appInfo :: ConsulInfo }
 
@@ -34,7 +35,24 @@ defaultConsul = ConsulInfo { consulHost = "127.0.0.1"
                            , consulPort = 8500
                            }
 
-runAppEx = runApp (AppEnv defaultConsul) consulUrl
+runAppEx = runApp (AppEnv defaultConsul) $ do
+  let key = "test"
+
+  liftIO $ putStrLn "Before inserting:"
+  getKey key >>= liftIO . print
+  liftIO $ putStrLn ""
+
+  setKey key ("stuff" :: LBS.ByteString)
+
+  liftIO $ putStrLn "after setting key"
+  getKey key >>= liftIO . print
+  liftIO $ putStrLn ""
+
+  deleteKey key
+
+  liftIO $ putStrLn "after deleting key"
+  getKey key >>= liftIO . print
+
 
 -- TODO return a more limited KeyError type here
 consulUrl :: App URI
@@ -54,34 +72,47 @@ consulUrl = do
 --   liftIO (putStrLn $ "ERROR: " <> e)
 --   pure "All ok now!"
 
--- keyEndpoint ci = do
---   let url = consulUrl ci
---       keyEndpoint = show url ++ "/v1/kv/"
---   case parseURI keyEndpoint of
---     Just u -> keyEndpoint
---     Nothing -> error $ "'" ++ keyEndpoint ++ "' is not a valid URL"
+safeGet url = getWith (set checkStatus (Just $ \_ _ _ -> Nothing) defaults) url
+safePut url = putWith (set checkStatus (Just $ \_ _ _ -> Nothing) defaults) url
+safeDelete url = deleteWith (set checkStatus (Just $ \_ _ _ -> Nothing) defaults) url
 
+keyEndpoint :: App URI
+keyEndpoint = do
+  baseUrl <- consulUrl
+  let keyEndpoint = show baseUrl ++ "/v1/kv/"
+  case parseURI keyEndpoint of
+    Just u -> return u
+    Nothing -> throwError (KeyParseError $ "error building keyEndpoint url")
 
--- getKey ci key= do
---   let x = parseURI (keyEndpoint ci ++ key)
---   case x of
---     Just keyUrl -> do
---       get (show keyUrl)
---     Nothing -> error $ "'" ++ show x ++ "'  was not a valid key url"
+getKey :: String -> App (Response LBS.ByteString)
+getKey key = do
+  endpoint <- keyEndpoint
+  let x = parseURI (show endpoint ++ key)
+  case x of
+    Just keyUrl -> do
+      r <- liftIO $ safeGet (show keyUrl)
+      let responseCode = r ^. responseStatus . statusCode
+      case responseCode of
+        200 -> pure r
+        404 -> throwError Http404
+        500 -> throwError Http500
+        _ -> throwError UnknownError
+    Nothing -> throwError (KeyParseError $ "error decoding consul url '")
 
--- setKey ci key contents = do
---   let x = parseURI (keyEndpoint ci ++ key)
---   case x of
---     Just keyUrl -> do
---       put (show keyUrl) contents
---     Nothing -> error $ "'" ++ show x ++ "'  was not a valid key url"
+setKey key contents = do
+  endpoint <- keyEndpoint
+  let x = parseURI (show endpoint ++ key)
+  case x of
+    Just keyUrl -> do
+      liftIO $ safePut (show keyUrl) contents
+    Nothing -> throwError (KeyParseError $ "error appending: '" ++ show endpoint ++ "' and '" ++ key ++"'")
 
-
--- safeLoadFile :: FilePath -> IO (Either IOException String)
--- safeLoadFile f = (Right <$> readFile f) `catch` (\e -> pure (Left e))
-
--- fileChars :: FilePath -> IO (Either IOException Int)
--- fileChars = fmap (fmap Prelude.length) . safeLoadFile
-
--- safePrintFile :: FilePath -> IO (Either IOException ())
--- safePrintFile f = safeLoadFile f >>= traverse putStrLn
+-- TODO handle recursively deleting
+-- TODO PLEASE handle building urls better :S It caused an error
+deleteKey key = do
+  endpoint <- keyEndpoint
+  let x = parseURI (show endpoint ++ key)
+  case x of
+    Just keyUrl -> do
+      liftIO $ safeDelete (show keyUrl)
+    Nothing -> throwError (KeyParseError $ "error appending: '" ++ show endpoint ++ "' and '" ++ key ++"'")
