@@ -94,9 +94,15 @@ deleteKey key = do
 runAppEx = runApp (AppEnv defaultConsul) $ do
   let key = "test"
 
-  liftIO $ putStrLn "Before inserting:"
-  getKey key >>= liftIO . print
-  liftIO $ putStrLn ""
+  -- TODO figure out how to catch this error and print "expected error" when it shows up otherwise it short-circuits
+  -- liftIO $ putStrLn "Before inserting:"
+  -- getKey key >>= liftIO . print
+  -- liftIO $ putStrLn ""
+  -- notes I left myself on catching errors from throwError:
+  --- catching an error made by throwError
+  --- throwErrorExample = runExceptT . catchError (throwError "Bzzt") $ \e -> do
+  ---   liftIO (putStrLn $ "ERROR: " <> e)
+  ---   pure "All ok now!"
 
   setKey key ("stuff" :: LBS.ByteString)
 
