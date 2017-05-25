@@ -35,9 +35,10 @@ newtype App a = App { unApp :: ExceptT AppError (ReaderT AppEnv IO) a }
            , MonadIO)
 
 -- safe versions of wreq's get/put/delete that don't throw exceptions
-safeGet url = getWith (set checkStatus (Just $ \_ _ _ -> Nothing) defaults) url
-safePut url = putWith (set checkStatus (Just $ \_ _ _ -> Nothing) defaults) url
-safeDelete url = deleteWith (set checkStatus (Just $ \_ _ _ -> Nothing) defaults) url
+-- TODO update these, set checkResponse Nothing didn't do the trick
+-- safeGet url = getWith (set checkStatus (Just $ \_ _ _ -> Nothing) defaults) url
+-- safePut url = putWith (set checkStatus (Just $ \_ _ _ -> Nothing) defaults) url
+-- safeDelete url = deleteWith (set checkStatus (Just $ \_ _ _ -> Nothing) defaults) url
 
 runApp :: AppEnv -> App a -> IO (Either AppError a)
 runApp ae app = (runReaderT (runExceptT (unApp app))) ae
@@ -66,7 +67,7 @@ getKey key = do
   let x = parseURI (show endpoint ++ key)
   case x of
     Just keyUrl -> do
-      r <- liftIO $ safeGet (show keyUrl)
+      r <- liftIO $ get (show keyUrl)
       let responseCode = r ^. responseStatus . statusCode
       case responseCode of
         200 -> pure r
@@ -79,7 +80,7 @@ setKey key contents = do
   endpoint <- keyEndpoint
   let x = parseURI (show endpoint ++ key)
   case x of
-    Just keyUrl -> liftIO $ safePut (show keyUrl) contents
+    Just keyUrl -> liftIO $ put (show keyUrl) contents
     Nothing -> throwError (KeyParseError $ "error appending: '" ++ show endpoint ++ "' and '" ++ key ++"'")
 
 -- TODO handle recursively deleting
@@ -88,7 +89,7 @@ deleteKey key = do
   endpoint <- keyEndpoint
   let x = parseURI (show endpoint ++ key)
   case x of
-    Just keyUrl -> liftIO $ safeDelete (show keyUrl)
+    Just keyUrl -> liftIO $ delete (show keyUrl)
     Nothing -> throwError (KeyParseError $ "error appending: '" ++ show endpoint ++ "' and '" ++ key ++"'")
 
 runAppEx = runApp (AppEnv defaultConsul) $ do
