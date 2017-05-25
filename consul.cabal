@@ -12,14 +12,14 @@ category:            Web
 build-type:          Simple
 cabal-version:       >=1.10
 
-executable consul
+library
   hs-source-dirs:      src
-  main-is:             Main.hs
+  exposed-modules:     Consul
   default-language:    Haskell2010
   build-depends:       base >= 4.7 && < 5
                      , bytestring
                      , lens
                      , network-uri >= 2.6.1.0
-                     , wreq
+                     , wreq == 0.5.0.1
                      , text
                      , mtl
